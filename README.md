@@ -18,33 +18,34 @@ The setup should look like this:
                  ▼                          
          ┌───────────────┐                  
          │               │                  
-┌────────│ Load Balancer │────────┐         
-│        │               │        │         
-│        └──────┬─┬──────┘        │         
-│               │ │               │         
-│               │ │               │         
-│        ┌──────┘ └────────┐      │         
-│        │ ┌─────────────┐ │      │ ┌──────┐
-│        │ │/write or UDP│ │      │ │/query│
-│        ▼ └─────────────┘ ▼      │ └──────┘
-│  ┌──────────┐      ┌──────────┐ │         
-│  │ InfluxDB │      │ InfluxDB │ │         
-│  │ Relay    │      │ Relay    │ │         
-│  └─────┬────┘      └────┬─────┘ │         
-│        │                │       │         
-│        │                │       │         
-│        ▼                ▼       │         
-│  ┌──────────┐     ┌──────────┐  │         
-│  │          │     │          │  │         
-└─▶│ InfluxDB │     │ InfluxDB │◀─┘         
-   │          │     │          │            
-   └──────────┘     └──────────┘            
+┌────────│ Load Balancer │─────────┐        
+│        │               │         │        
+│        └──────┬─┬──────┘         │        
+│               │ │                │        
+│               │ │                │        
+│        ┌──────┘ └────────┐       │        
+│        │ ┌─────────────┐ │       │┌──────┐
+│        │ │/write or UDP│ │       ││/query│
+│        ▼ └─────────────┘ ▼       │└──────┘
+│  ┌──────────┐      ┌──────────┐  │        
+│  │ InfluxDB │      │ InfluxDB │  │        
+│  │ Relay    │      │ Relay    │  │        
+│  └─────┬────┘      └────┬─────┘  │        
+│        │                │        │        
+│     ┌──┼────────────────┼──┐     │        
+│     │  │                │  │     │        
+│     ▼  ▼                ▼  ▼     │        
+│  ┌──────────┐      ┌──────────┐  │        
+│  │          │      │          │  │        
+└─▶│ InfluxDB │      │ InfluxDB │◀─┘        
+   │          │      │          │           
+   └──────────┘      └──────────┘           
  ```
 
 
 The relay will listen for HTTP or UDP writes and write the data to both servers via their HTTP write endpoint. If the write is sent via HTTP, the relay will return a success response as soon as one of the two InfluxDB servers returns a success. If either InfluxDB server returns a 400 response, that will be returned to the client immediately. If both servers return a 500, a 500 will be returned to the client.
 
-With this setup a failire of one Relay or one InfluxDB can be sustained while still taking writes and serving queries. However, the recovery process will require operator intervention.
+With this setup a failure of one Relay or one InfluxDB can be sustained while still taking writes and serving queries. However, the recovery process will require operator intervention.
 
 ## Recovery
 
