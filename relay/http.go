@@ -59,7 +59,7 @@ func (h *HTTP) Run() error {
 	}
 	h.l = l
 
-	log.Printf("Starting http relay %q on %v", h.Name(), h.addr)
+	log.Printf("Starting HTTP relay %q on %v", h.Name(), h.addr)
 
 	err = http.Serve(l, h)
 	if atomic.LoadInt64(&h.closing) != 0 {
