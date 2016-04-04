@@ -18,7 +18,7 @@ func main() {
 	flag.Parse()
 
 	if *configFile == "" {
-		fmt.Fprintln(os.Stderr, "Missing configufation file")
+		fmt.Fprintln(os.Stderr, "Missing configuration file")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
