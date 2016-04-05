@@ -60,8 +60,6 @@ output = [
 
 ## Description
 
-The following is a proposed architecture for the project. This may get more fleshed out and fully featured as it develops as part of the InfluxDB 0.12.0 development cycle.
-
 The architecture is fairly simple and consists of a load balancer, two or more InfluxDB Relay processes and two or more InfluxDB processes. The load balancer should point UDP traffic and HTTP POST requests with the path `/write` to the two relays while pointing GET requests with the path `/query` to the two InfluxDB servers.
 
 The setup should look like this:
