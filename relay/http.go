@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -26,6 +27,13 @@ type HTTP struct {
 	backends []*httpBackend
 }
 
+const (
+	DefaultHTTPTimeout      = time.Second * 10
+	DefaultMaxDelayInterval = time.Second * 10
+	DefaultInitialInterval  = time.Millisecond * 500
+	DefaultMultiplier       = time.Duration(2)
+)
+
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	h := new(HTTP)
 
@@ -38,8 +46,36 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		if b.Name == "" {
 			b.Name = b.Location
 		}
-
-		h.backends = append(h.backends, &httpBackend{b.Name, b.Location})
+		timeout := DefaultHTTPTimeout
+		if b.Timeout != "" {
+			t, err := time.ParseDuration(b.Timeout)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing HTTP timeout %v", err)
+			}
+			timeout = t
+		}
+		// If configured, create a retryBuffer per backend.
+		// This way we serialize retries against each backend.
+		var rb *retryBuffer
+		if b.BufferSize > 0 {
+			max := DefaultMaxDelayInterval
+			if b.MaxDelayInterval != "" {
+				m, err := time.ParseDuration(b.MaxDelayInterval)
+				if err != nil {
+					return nil, fmt.Errorf("error parsing max retry time %v", err)
+				}
+				max = m
+			}
+			rb = newRetryBuffer(b.BufferSize, DefaultInitialInterval, DefaultMultiplier, max)
+		}
+		h.backends = append(h.backends, &httpBackend{
+			name:        b.Name,
+			location:    b.Location,
+			retryBuffer: rb,
+			client: &http.Client{
+				Timeout: timeout,
+			},
+		})
 	}
 
 	return h, nil
@@ -247,19 +283,57 @@ func jsonError(w http.ResponseWriter, code int, message string) {
 }
 
 type httpBackend struct {
-	name     string
-	location string
+	name        string
+	location    string
+	retryBuffer *retryBuffer
+	client      *http.Client
+	buffering   int32
 }
 
-func (b *httpBackend) post(buf []byte, query string) (*http.Response, error) {
+func (b *httpBackend) post(buf []byte, query string) (response *http.Response, err error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	req.URL.RawQuery = query
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Content-Length", fmt.Sprint(len(buf)))
 
-	return http.DefaultClient.Do(req)
+	// Check if we are in buffering mode
+	var buffering int32
+	if b.retryBuffer != nil {
+		// load current buffering state
+		buffering = atomic.LoadInt32(&b.buffering)
+	}
+	if buffering == 0 {
+		// Do action once
+		response, err = b.client.Do(req)
+		if err == nil {
+			return
+		}
+	}
+	if b.retryBuffer != nil {
+		// We failed start retry logic if we have a buffer
+		err = b.retryBuffer.Retry(func() error {
+			// Re-initialize the request body
+			req.Body = ioutil.NopCloser(bytes.NewReader(buf))
+			// Do request again
+			r, err := b.client.Do(req)
+			// Retry transport errors and 500s
+			if err != nil || r.StatusCode/100 == 5 {
+				// Set buffering to 1 since we had a failure
+				atomic.StoreInt32(&b.buffering, 1)
+				if err == nil {
+					err = fmt.Errorf("http code: %d", r.StatusCode)
+				}
+				return err
+			}
+			response = r
+			// Set buffering to 0 since we had a success
+			atomic.StoreInt32(&b.buffering, 0)
+			return nil
+		})
+	}
+	return
 }

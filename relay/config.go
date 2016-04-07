@@ -32,6 +32,13 @@ type HTTPOutputConfig struct {
 	// Timeout sets a per-backend timeout for write requests. (Default 10s)
 	// The format used is the same seen in time.ParseDuration
 	Timeout string `toml:"timeout"`
+
+	// Buffer failed writes up to maximum count.
+	BufferSize int `toml:"buffer-size"`
+
+	// Maximum delay between retry attempts.
+	// The format used is the same seen in time.ParseDuration (Default 10s)
+	MaxDelayInterval string `toml:"max-delay-interval"`
 }
 
 type UDPConfig struct {

@@ -119,3 +119,24 @@ During this entire process the Relays should be sending writes to both servers f
 ## Sharding
 
 It's possible to add another layer on top of this kind of setup to shard data. Depending on your needs you could shard on the measurement name or a specific tag like `customer_id`. The sharding layer would have to service both queries and writes.
+
+## Buffering
+
+The relay can be configured to buffer failed requests.
+The intent of this logic is reduce the number of failures during short outages or periodic network issues.
+> This retry logic is **NOT** sufficient for for long periods of downtime as all data is buffered in RAM
+
+Buffering has two configuration options:
+
+* BufferSize -- the maximum number of requests to buffer per backend.
+* MaxDelayInterval -- the max delay between retry attempts per backend.
+    The initial retry interval is 500ms and is doubled after every failure.
+
+If the buffer is full then requests are dropped and an error is logged.
+If a requests makes it into the buffer it is retried until success.
+
+Retries are serialized to a single backend.
+Meaning that buffered requests are attempted one at a time.
+If buffered requests succeed then there is no delay between subsequent attempts.
+
+
