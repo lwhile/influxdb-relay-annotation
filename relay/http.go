@@ -28,10 +28,10 @@ type HTTP struct {
 }
 
 const (
-	DefaultHTTPTimeout      = time.Second * 10
-	DefaultMaxDelayInterval = time.Second * 10
-	DefaultInitialInterval  = time.Millisecond * 500
-	DefaultMultiplier       = time.Duration(2)
+	DefaultHTTPTimeout      = 10 * time.Second
+	DefaultMaxDelayInterval = 10 * time.Second
+	DefaultInitialInterval  = 500 * time.Millisecond
+	DefaultMultiplier       = 2
 )
 
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
