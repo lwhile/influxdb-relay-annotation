@@ -301,12 +301,7 @@ func (b *httpBackend) post(buf []byte, query string) (response *http.Response, e
 	req.Header.Set("Content-Length", fmt.Sprint(len(buf)))
 
 	// Check if we are in buffering mode
-	var buffering int32
-	if b.retryBuffer != nil {
-		// load current buffering state
-		buffering = atomic.LoadInt32(&b.buffering)
-	}
-	if buffering == 0 {
+	if atomic.LoadInt32(&b.buffering) == 0 {
 		// Do action once
 		response, err = b.client.Do(req)
 		if err == nil {
