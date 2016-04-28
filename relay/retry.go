@@ -30,10 +30,10 @@ type retryBuffer struct {
 
 	list *bufferList
 
-	post func([]byte, string) (*responseData, error)
+	p poster
 }
 
-func newRetryBuffer(size, batch int, max time.Duration) *retryBuffer {
+func newRetryBuffer(size, batch int, max time.Duration, p poster) *retryBuffer {
 	r := &retryBuffer{
 		initialInterval: retryInitial,
 		multiplier:      retryMultiplier,
@@ -41,14 +41,15 @@ func newRetryBuffer(size, batch int, max time.Duration) *retryBuffer {
 		maxBuffered:     size,
 		maxBatch:        batch,
 		list:            newBufferList(size, batch),
+		p:               p,
 	}
 	go r.run()
 	return r
 }
 
-func (r *retryBuffer) Post(buf []byte, query string) (*responseData, error) {
+func (r *retryBuffer) post(buf []byte, query string) (*responseData, error) {
 	if atomic.LoadInt32(&r.buffering) == 0 {
-		resp, err := r.post(buf, query)
+		resp, err := r.p.post(buf, query)
 		// TODO A 5xx caused by the point data could cause the relay to buffer forever
 		if err == nil && resp.StatusCode/100 != 5 {
 			return resp, err
@@ -78,7 +79,7 @@ func (r *retryBuffer) run() {
 
 		interval := r.initialInterval
 		for {
-			resp, err := r.post(buf.Bytes(), batch.query)
+			resp, err := r.p.post(buf.Bytes(), batch.query)
 			if err == nil && resp.StatusCode/100 != 5 {
 				batch.resp = resp
 				atomic.StoreInt32(&r.buffering, 0)
@@ -102,6 +103,7 @@ type batch struct {
 	query string
 	bufs  [][]byte
 	size  int
+	full  bool
 
 	wg   sync.WaitGroup
 	resp *responseData
@@ -162,12 +164,22 @@ func (l *bufferList) add(buf []byte, query string) (*batch, error) {
 	l.size += len(buf)
 	l.cond.Signal()
 
-	cur := &l.head
+	var cur **batch
 
 	// non-nil batches that either don't match the query string or would be too large
 	// when adding the current set of points
-	for *cur != nil && ((*cur).query != query || (*cur).size+len(buf) > l.maxBatch) {
-		cur = &(*cur).next
+	for cur = &l.head; *cur != nil; cur = &(*cur).next {
+		if (*cur).query != query || (*cur).full {
+			continue
+		}
+
+		if (*cur).size+len(buf) > l.maxBatch {
+			// prevent future writes from preceding this write
+			(*cur).full = true
+			continue
+		}
+
+		break
 	}
 
 	if *cur == nil {

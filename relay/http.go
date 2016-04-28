@@ -44,58 +44,12 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	h.name = cfg.Name
 
 	for i := range cfg.Outputs {
-		b := &cfg.Outputs[i]
-
-		if b.Name == "" {
-			b.Name = b.Location
-		}
-
-		timeout := DefaultHTTPTimeout
-		if b.Timeout != "" {
-			t, err := time.ParseDuration(b.Timeout)
-			if err != nil {
-				return nil, fmt.Errorf("error parsing HTTP timeout %v", err)
-			}
-			timeout = t
-		}
-
-		client := new(http.Client)
-		client.Timeout = timeout
-
-		// If configured, create a retryBuffer per backend.
-		// This way we serialize retries against each backend.
-		var rb *retryBuffer
-		if b.BufferSizeMB > 0 {
-			max := DefaultMaxDelayInterval
-			if b.MaxDelayInterval != "" {
-				m, err := time.ParseDuration(b.MaxDelayInterval)
-				if err != nil {
-					return nil, fmt.Errorf("error parsing max retry time %v", err)
-				}
-				max = m
-			}
-
-			batch := DefaultBatchSizeKB * KB
-			if b.MaxBatchKB > 0 {
-				batch = b.MaxBatchKB * KB
-			}
-
-			rb = newRetryBuffer(b.BufferSizeMB*MB, batch, max)
-		}
-
-		backend := &httpBackend{
-			name:        b.Name,
-			location:    b.Location,
-			retryBuffer: rb,
-			client:      client,
-		}
-
-		if rb != nil {
-			rb.post = backend.rawPost
+		backend, err := newHTTPBackend(&cfg.Outputs[i])
+		if err != nil {
+			return nil, err
 		}
 
 		h.backends = append(h.backends, backend)
-
 	}
 
 	return h, nil
@@ -215,7 +169,6 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resp, err := b.post(outBytes, query)
 			if err != nil {
 				log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
-				responses <- nil
 			} else {
 				if resp.StatusCode/100 == 5 {
 					log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
@@ -234,28 +187,25 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var errResponse *responseData
 
 	for resp := range responses {
-		if resp == nil {
-			continue
-		}
-
-		if resp.StatusCode/100 == 2 { // points written successfully
+		switch resp.StatusCode / 100 {
+		case 2:
 			w.WriteHeader(http.StatusNoContent)
 			return
-		}
 
-		if errResponse != nil {
-			if errResponse.StatusCode/100 == 4 {
-				continue
-			}
-		}
+		case 4:
+			// user error
+			resp.Write(w)
+			return
 
-		// hold on to one of the responses to return back to the client
-		errResponse = resp
+		default:
+			// hold on to one of the responses to return back to the client
+			errResponse = resp
+		}
 	}
 
 	// no successful writes
 	if errResponse == nil {
-		// failed to make any valid request... network error?
+		// failed to make any valid request...
 		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
 		return
 	}
@@ -292,16 +242,23 @@ func jsonError(w http.ResponseWriter, code int, message string) {
 	w.Write([]byte(data))
 }
 
-type httpBackend struct {
-	name        string
-	location    string
-	retryBuffer *retryBuffer
-	client      *http.Client
+type poster interface {
+	post([]byte, string) (*responseData, error)
 }
 
-var ErrBufferFull = errors.New("retry buffer full")
+type simplePoster struct {
+	client   *http.Client
+	location string
+}
 
-func (b *httpBackend) rawPost(buf []byte, query string) (*responseData, error) {
+func newSimplePoster(location string, timeout time.Duration) *simplePoster {
+	return &simplePoster{
+		client:   &http.Client{Timeout: timeout},
+		location: location,
+	}
+}
+
+func (b *simplePoster) post(buf []byte, query string) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -333,13 +290,54 @@ func (b *httpBackend) rawPost(buf []byte, query string) (*responseData, error) {
 	}, nil
 }
 
-func (b *httpBackend) post(buf []byte, query string) (*responseData, error) {
-	if b.retryBuffer == nil {
-		return b.rawPost(buf, query)
+type httpBackend struct {
+	poster
+	name string
+}
+
+func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
+	if cfg.Name == "" {
+		cfg.Name = cfg.Location
 	}
 
-	return b.retryBuffer.Post(buf, query)
+	timeout := DefaultHTTPTimeout
+	if cfg.Timeout != "" {
+		t, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing HTTP timeout '%v'", err)
+		}
+		timeout = t
+	}
+
+	var p poster = newSimplePoster(cfg.Location, timeout)
+
+	// If configured, create a retryBuffer per backend.
+	// This way we serialize retries against each backend.
+	if cfg.BufferSizeMB > 0 {
+		max := DefaultMaxDelayInterval
+		if cfg.MaxDelayInterval != "" {
+			m, err := time.ParseDuration(cfg.MaxDelayInterval)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing max retry time %v", err)
+			}
+			max = m
+		}
+
+		batch := DefaultBatchSizeKB * KB
+		if cfg.MaxBatchKB > 0 {
+			batch = cfg.MaxBatchKB * KB
+		}
+
+		p = newRetryBuffer(cfg.BufferSizeMB*MB, batch, max, p)
+	}
+
+	return &httpBackend{
+		poster: p,
+		name:   cfg.Name,
+	}, nil
 }
+
+var ErrBufferFull = errors.New("retry buffer full")
 
 var bufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
 
