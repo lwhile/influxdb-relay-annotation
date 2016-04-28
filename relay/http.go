@@ -3,12 +3,13 @@ package relay
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,8 +31,10 @@ type HTTP struct {
 const (
 	DefaultHTTPTimeout      = 10 * time.Second
 	DefaultMaxDelayInterval = 10 * time.Second
-	DefaultInitialInterval  = 500 * time.Millisecond
-	DefaultMultiplier       = 2
+	DefaultBatchSizeKB      = 512
+
+	KB = 1024
+	MB = 1024 * KB
 )
 
 func NewHTTP(cfg HTTPConfig) (Relay, error) {
@@ -46,6 +49,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		if b.Name == "" {
 			b.Name = b.Location
 		}
+
 		timeout := DefaultHTTPTimeout
 		if b.Timeout != "" {
 			t, err := time.ParseDuration(b.Timeout)
@@ -54,10 +58,14 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			}
 			timeout = t
 		}
+
+		client := new(http.Client)
+		client.Timeout = timeout
+
 		// If configured, create a retryBuffer per backend.
 		// This way we serialize retries against each backend.
 		var rb *retryBuffer
-		if b.BufferSize > 0 {
+		if b.BufferSizeMB > 0 {
 			max := DefaultMaxDelayInterval
 			if b.MaxDelayInterval != "" {
 				m, err := time.ParseDuration(b.MaxDelayInterval)
@@ -66,16 +74,28 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 				}
 				max = m
 			}
-			rb = newRetryBuffer(b.BufferSize, DefaultInitialInterval, DefaultMultiplier, max)
+
+			batch := DefaultBatchSizeKB * KB
+			if b.MaxBatchKB > 0 {
+				batch = b.MaxBatchKB * KB
+			}
+
+			rb = newRetryBuffer(b.BufferSizeMB*MB, batch, max)
 		}
-		h.backends = append(h.backends, &httpBackend{
+
+		backend := &httpBackend{
 			name:        b.Name,
 			location:    b.Location,
 			retryBuffer: rb,
-			client: &http.Client{
-				Timeout: timeout,
-			},
-		})
+			client:      client,
+		}
+
+		if rb != nil {
+			rb.post = backend.rawPost
+		}
+
+		h.backends = append(h.backends, backend)
+
 	}
 
 	return h, nil
@@ -178,25 +198,27 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer putBuf(outBuf)
+	// normalize query string
+	query := r.URL.Query().Encode()
+
 	outBytes := outBuf.Bytes()
 
 	var wg sync.WaitGroup
 	wg.Add(len(h.backends))
 
-	var responses = make(chan *http.Response, len(h.backends))
+	var responses = make(chan *responseData, len(h.backends))
 
 	for _, b := range h.backends {
 		b := b
 		go func() {
 			defer wg.Done()
-			resp, err := b.post(outBytes, r.URL.RawQuery)
+			resp, err := b.post(outBytes, query)
 			if err != nil {
 				log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
 				responses <- nil
 			} else {
-				if resp.StatusCode/100 != 2 {
-					log.Printf("Non-2xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
+				if resp.StatusCode/100 == 5 {
+					log.Printf("5xx response for relay %q backend %q: %v", h.Name(), b.name, resp.StatusCode)
 				}
 				responses <- resp
 			}
@@ -206,72 +228,60 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		wg.Wait()
 		close(responses)
+		putBuf(outBuf)
 	}()
 
-	var responded bool
-	var errResponse *http.Response
+	var errResponse *responseData
 
 	for resp := range responses {
 		if resp == nil {
 			continue
 		}
 
-		if responded {
-			resp.Body.Close()
-			continue
-		}
-
 		if resp.StatusCode/100 == 2 { // points written successfully
 			w.WriteHeader(http.StatusNoContent)
-			responded = true
-			resp.Body.Close()
-			continue
+			return
 		}
 
 		if errResponse != nil {
-			resp.Body.Close()
-			continue
+			if errResponse.StatusCode/100 == 4 {
+				continue
+			}
 		}
 
 		// hold on to one of the responses to return back to the client
 		errResponse = resp
 	}
 
-	if responded {
-		// at least one success
-		if errResponse != nil {
-			errResponse.Body.Close()
-		}
-		return
-	}
-
 	// no successful writes
 	if errResponse == nil {
 		// failed to make any valid request... network error?
-		jsonError(w, http.StatusInternalServerError, "unable to write points")
+		jsonError(w, http.StatusServiceUnavailable, "unable to write points")
 		return
 	}
 
-	// errResponse has our answer...
-	for _, s := range []string{"Content-Type", "Content-Length", "Content-Encoding"} {
-		if v := errResponse.Header.Get(s); v != "" {
-			w.Header().Set(s, v)
-		}
+	errResponse.Write(w)
+}
+
+type responseData struct {
+	ContentType     string
+	ContentEncoding string
+	StatusCode      int
+	Body            []byte
+}
+
+func (rd *responseData) Write(w http.ResponseWriter) {
+	if rd.ContentType != "" {
+		w.Header().Set("Content-Type", rd.ContentType)
 	}
-	w.WriteHeader(errResponse.StatusCode)
-	io.Copy(w, errResponse.Body)
-	errResponse.Body.Close()
-}
 
-var bufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
+	if rd.ContentEncoding != "" {
+		w.Header().Set("Content-Encoding", rd.ContentEncoding)
+	}
 
-func getBuf() *bytes.Buffer {
-	return bufPool.Get().(*bytes.Buffer)
-}
-
-func putBuf(b *bytes.Buffer) {
-	b.Reset()
-	bufPool.Put(b)
+	w.Header().Set("Content-Length", strconv.Itoa(len(rd.Body)))
+	w.WriteHeader(rd.StatusCode)
+	w.Write(rd.Body)
 }
 
 func jsonError(w http.ResponseWriter, code int, message string) {
@@ -287,48 +297,60 @@ type httpBackend struct {
 	location    string
 	retryBuffer *retryBuffer
 	client      *http.Client
-	buffering   int32
 }
 
-func (b *httpBackend) post(buf []byte, query string) (response *http.Response, err error) {
+var ErrBufferFull = errors.New("retry buffer full")
+
+func (b *httpBackend) rawPost(buf []byte, query string) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	req.URL.RawQuery = query
 	req.Header.Set("Content-Type", "text/plain")
-	req.Header.Set("Content-Length", fmt.Sprint(len(buf)))
+	req.Header.Set("Content-Length", strconv.Itoa(len(buf)))
 
-	// Check if we are in buffering mode
-	if atomic.LoadInt32(&b.buffering) == 0 {
-		// Do action once
-		response, err = b.client.Do(req)
-		if err == nil {
-			return
-		}
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, err
 	}
-	if b.retryBuffer != nil {
-		// We failed start retry logic if we have a buffer
-		err = b.retryBuffer.Retry(func() error {
-			// Re-initialize the request body
-			req.Body = ioutil.NopCloser(bytes.NewReader(buf))
-			// Do request again
-			r, err := b.client.Do(req)
-			// Retry transport errors and 500s
-			if err != nil || r.StatusCode/100 == 5 {
-				// Set buffering to 1 since we had a failure
-				atomic.StoreInt32(&b.buffering, 1)
-				if err == nil {
-					err = fmt.Errorf("http code: %d", r.StatusCode)
-				}
-				return err
-			}
-			response = r
-			// Set buffering to 0 since we had a success
-			atomic.StoreInt32(&b.buffering, 0)
-			return nil
-		})
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
-	return
+
+	if err = resp.Body.Close(); err != nil {
+		return nil, err
+	}
+
+	return &responseData{
+		ContentType:     resp.Header.Get("Conent-Type"),
+		ContentEncoding: resp.Header.Get("Conent-Encoding"),
+		StatusCode:      resp.StatusCode,
+		Body:            data,
+	}, nil
+}
+
+func (b *httpBackend) post(buf []byte, query string) (*responseData, error) {
+	if b.retryBuffer == nil {
+		return b.rawPost(buf, query)
+	}
+
+	return b.retryBuffer.Post(buf, query)
+}
+
+var bufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
+
+func getBuf() *bytes.Buffer {
+	if bb, ok := bufPool.Get().(*bytes.Buffer); ok {
+		return bb
+	}
+	return new(bytes.Buffer)
+}
+
+func putBuf(b *bytes.Buffer) {
+	b.Reset()
+	bufPool.Put(b)
 }
