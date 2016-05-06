@@ -31,6 +31,7 @@ output = [
     # name: name of the backend, used for display purposes only.
     # location: full URL of the /write endpoint of the backend
     # timeout: Go-parseable time duration. Fail writes if incomplete in this time.
+    # skip-tls-verification: skip verification for HTTPS location. WARNING: it's insecure. Don't use in production.
     { name="local1", location="http://127.0.0.1:8086/write", timeout="10s" },
     { name="local2", location="http://127.0.0.1:7086/write", timeout="10s" },
 ]

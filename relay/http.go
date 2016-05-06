@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -68,12 +69,24 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			}
 			rb = newRetryBuffer(b.BufferSize, DefaultInitialInterval, DefaultMultiplier, max)
 		}
+		var transport http.RoundTripper // nil - will be use DefaultTransport
+
+		if b.SkipTLSVerification {
+			// will be use Custom Transport instead of Default
+			transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: b.SkipTLSVerification,
+				},
+			}
+		}
+
 		h.backends = append(h.backends, &httpBackend{
 			name:        b.Name,
 			location:    b.Location,
 			retryBuffer: rb,
 			client: &http.Client{
-				Timeout: timeout,
+				Timeout:   timeout,
+				Transport: transport,
 			},
 		})
 	}
