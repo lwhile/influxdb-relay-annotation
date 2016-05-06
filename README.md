@@ -28,7 +28,7 @@ bind-addr = "127.0.0.1:9096"
 
 # Enable HTTPS requests.
 https-enabled = true
-https-certificate = "/etc/ssl/influxdb.pem"
+https-certificate = "/etc/ssl/influxdb-relay.pem"
 
 # Array of InfluxDB instances to use as backends for Relay.
 output = [
