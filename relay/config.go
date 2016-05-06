@@ -18,6 +18,10 @@ type HTTPConfig struct {
 	// Addr should be set to the desired listening host:port
 	Addr string `toml:"bind-addr"`
 
+	// Set https-enabled to true and certificate in order to handle HTTPS requests
+	HTTPSEnabled     bool   `toml:"https-enabled"`
+	HTTPSCertificate string `toml:"https-certificate"`
+
 	// Outputs is a list of backed servers where writes will be forwarded
 	Outputs []HTTPOutputConfig `toml:"output"`
 }

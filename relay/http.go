@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -20,6 +21,9 @@ import (
 type HTTP struct {
 	addr string
 	name string
+
+	https bool
+	cert  string
 
 	closing int64
 	l       net.Listener
@@ -39,6 +43,9 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 	h.addr = cfg.Addr
 	h.name = cfg.Name
+
+	h.https = cfg.HTTPSEnabled
+	h.cert = cfg.HTTPSCertificate
 
 	for i := range cfg.Outputs {
 		b := &cfg.Outputs[i]
@@ -89,15 +96,32 @@ func (h *HTTP) Name() string {
 }
 
 func (h *HTTP) Run() error {
-	l, err := net.Listen("tcp", h.addr)
-	if err != nil {
-		return err
+	if h.https {
+		cert, err := tls.LoadX509KeyPair(h.cert, h.cert)
+		if err != nil {
+			return err
+		}
+
+		l, err := tls.Listen("tcp", h.addr, &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		})
+		if err != nil {
+			return err
+		}
+		h.l = l
+
+		log.Printf("Starting HTTPS relay %q on %v", h.Name(), h.addr)
+	} else {
+		l, err := net.Listen("tcp", h.addr)
+		if err != nil {
+			return err
+		}
+		h.l = l
+
+		log.Printf("Starting HTTP relay %q on %v", h.Name(), h.addr)
 	}
-	h.l = l
 
-	log.Printf("Starting HTTP relay %q on %v", h.Name(), h.addr)
-
-	err = http.Serve(l, h)
+	err := http.Serve(h.l, h)
 	if atomic.LoadInt64(&h.closing) != 0 {
 		return nil
 	}

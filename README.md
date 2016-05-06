@@ -26,6 +26,10 @@ name = "example-http"
 # TCP address to bind to, for HTTP server.
 bind-addr = "127.0.0.1:9096"
 
+# Enable HTTPS requests.
+https-enabled = true
+https-certificate = "/etc/ssl/influxdb.pem"
+
 # Array of InfluxDB instances to use as backends for Relay.
 output = [
     # name: name of the backend, used for display purposes only.
