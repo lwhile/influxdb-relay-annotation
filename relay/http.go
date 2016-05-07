@@ -69,15 +69,13 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 			}
 			rb = newRetryBuffer(b.BufferSize, DefaultInitialInterval, DefaultMultiplier, max)
 		}
-		var transport http.RoundTripper // nil - will be use DefaultTransport
 
-		if b.SkipTLSVerification {
-			// will be use Custom Transport instead of Default
-			transport = &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: b.SkipTLSVerification,
-				},
-			}
+		// Configure custom transport for http.Client
+		// Use for support skip-tls-verification option
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: b.SkipTLSVerification,
+			},
 		}
 
 		h.backends = append(h.backends, &httpBackend{
