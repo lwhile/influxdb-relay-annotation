@@ -71,7 +71,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 		}
 
 		// Configure custom transport for http.Client
-		// Use for support skip-tls-verification option
+		// Used for support skip-tls-verification option
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: b.SkipTLSVerification,
