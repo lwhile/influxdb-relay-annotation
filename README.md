@@ -97,7 +97,7 @@ The setup should look like this:
  ```
 
 
-The relay will listen for HTTP or UDP writes and write the data to each InfluxDB server via the HTTP write or UDP endpoint, as appropriate. If the write is sent via HTTP, the relay will return a success response as soon as one of the InfluxDB servers returns a success. If any InfluxDB server returns a 400 response, that will be returned to the client immediately. If all servers return a 500, a 500 will be returned to the client. (?)If only one or some servers return a 500 that will not be returned to the client(?).
+The relay will listen for HTTP or UDP writes and write the data to each InfluxDB server via the HTTP write or UDP endpoint, as appropriate. If the write is sent via HTTP, the relay will return a success response as soon as one of the InfluxDB servers returns a success. If any InfluxDB server returns a 400 response, that will be returned to the client immediately. If all servers return a 500, a 500 will be returned to the client. If some but not all servers return a 500 that will not be returned to the client. You can monitor each instance's logs for 500 errors.
 
 With this setup a failure of one Relay or one InfluxDB can be sustained while still taking writes and serving queries. However, the recovery process will require operator intervention.
 
@@ -105,11 +105,11 @@ With this setup a failure of one Relay or one InfluxDB can be sustained while st
 
 InfluxDB organizes its data on disk into logical blocks of time called shards. We can use this to create a hot recovery process with zero downtime.
 
-The length of time that shards represent in InfluxDB range from 1 hour to 7 days. For retention policies with an infinite duration (that is they keep data forever), shard durations are 7 days. For the sake of our example, let's assume shard durations of 1 day.
+The length of time that shards represent in InfluxDB are typically 1 hour, 1 day, or 7 days, depending on the retention duration, but can be explicitly set when creating the retention policy. For the sake of our example, let's assume shard durations of 1 day.
 
 Let's say one of the InfluxDB servers goes down for an hour on 2016-03-10. Once midnight UTC rolls over, all InfluxDB processes are now writing data to the shard for 2016-03-11 and the file(s) for 2016-03-10 have gone cold for writes. We can then restore things using these steps:
 
-1. Tell the load balancer to stop sending query traffic to the server that was down (this should be done as soon as an outage is detected to prevent partial data returned to queries.)
+1. Tell the load balancer to stop sending query traffic to the server that was down (this should be done as soon as an outage is detected to prevent partial or inconsistent query returns.)
 2. Create backup of 2016-03-10 shard from a server that was up the entire day
 3. Restore the backup of the shard from the good server to the server that had downtime
 4. Tell the load balancer to resume sending queries to the previously downed server
