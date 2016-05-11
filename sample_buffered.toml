@@ -4,15 +4,6 @@
 name = "example-http"
 bind-addr = "127.0.0.1:9096"
 output = [
-    { name="local1", location = "http://127.0.0.1:8086/write", buffer-size = 1000, max-delay-interval = "15s" },
-    { name="local2", location = "http://127.0.0.1:7086/write", buffer-size = 1000, max-delay-interval = "15s" },
-]
-
-[[udp]]
-name = "example-udp"
-bind-addr = "127.0.0.1:9096"
-read-buffer = 0 # default
-output = [
-    { name="local1", location="127.0.0.1:8089", mtu=512 },
-    { name="local2", location="127.0.0.1:7089", mtu=1024 },
+    { name="local1", location = "http://127.0.0.1:8086/write", buffer-size-mb = 100, max-batch-kb = 50, max-delay-interval = "5s" },
+    { name="local2", location = "http://127.0.0.1:7086/write", buffer-size-mb = 100, max-batch-kb = 50, max-delay-interval = "5s" },
 ]
