@@ -2,6 +2,8 @@
 
 This project adds a basic high availability layer to InfluxDB. With the right architecture and disaster recovery processes, this achieves a highly available setup.
 
+*NOTE:* `influxdb-relay` must be built with Go 1.5+
+
 ## Usage
 
 To build from source and run:
