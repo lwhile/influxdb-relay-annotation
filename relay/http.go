@@ -47,8 +47,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	h.addr = cfg.Addr
 	h.name = cfg.Name
 
-	h.https = cfg.HTTPSEnabled
-	h.cert = cfg.HTTPSCertificate
+	h.cert = cfg.TLSCombinedPem
 
 	for i := range cfg.Outputs {
 		backend, err := newHTTPBackend(&cfg.Outputs[i])
@@ -70,7 +69,7 @@ func (h *HTTP) Name() string {
 }
 
 func (h *HTTP) Run() error {
-	if h.https {
+	if h.cert != "" {
 		cert, err := tls.LoadX509KeyPair(h.cert, h.cert)
 		if err != nil {
 			return err
