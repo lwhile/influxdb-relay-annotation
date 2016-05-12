@@ -29,7 +29,7 @@ name = "example-http"
 bind-addr = "127.0.0.1:9096"
 
 # Enable HTTPS requests.
-tls-combined-pem = "/etc/ssl/influxdb-relay.pem"
+ssl-combined-pem = "/etc/ssl/influxdb-relay.pem"
 
 # Array of InfluxDB instances to use as backends for Relay.
 output = [

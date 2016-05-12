@@ -48,7 +48,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	h.addr = cfg.Addr
 	h.name = cfg.Name
 
-	h.cert = cfg.TLSCombinedPem
+	h.cert = cfg.SSLCombinedPem
 
 	h.schema = "http"
 	if h.cert != "" {

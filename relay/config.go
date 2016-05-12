@@ -19,7 +19,7 @@ type HTTPConfig struct {
 	Addr string `toml:"bind-addr"`
 
 	// Set certificate in order to handle HTTPS requests
-	TLSCombinedPem string `toml:"tls-combined-pem"`
+	SSLCombinedPem string `toml:"ssl-combined-pem"`
 
 	// Outputs is a list of backed servers where writes will be forwarded
 	Outputs []HTTPOutputConfig `toml:"output"`
