@@ -37,8 +37,11 @@ type HTTPOutputConfig struct {
 	// The format used is the same seen in time.ParseDuration
 	Timeout string `toml:"timeout"`
 
-	// Buffer failed writes up to maximum count.
-	BufferSize int `toml:"buffer-size"`
+	// Buffer failed writes up to maximum count. (Default 0, retry/buffering disabled)
+	BufferSizeMB int `toml:"buffer-size-mb"`
+
+	// Maximum batch size in KB (Default 512)
+	MaxBatchKB int `toml:"max-batch-kb"`
 
 	// Maximum delay between retry attempts.
 	// The format used is the same seen in time.ParseDuration (Default 10s)
