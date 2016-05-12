@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,11 +21,11 @@ import (
 
 // HTTP is a relay for HTTP influxdb writes
 type HTTP struct {
-	addr string
-	name string
+	addr   string
+	name   string
+	schema string
 
-	https bool
-	cert  string
+	cert string
 
 	closing int64
 	l       net.Listener
@@ -49,6 +50,11 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 	h.cert = cfg.TLSCombinedPem
 
+	h.schema = "http"
+	if h.cert != "" {
+		h.schema = "https"
+	}
+
 	for i := range cfg.Outputs {
 		backend, err := newHTTPBackend(&cfg.Outputs[i])
 		if err != nil {
@@ -63,38 +69,34 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 
 func (h *HTTP) Name() string {
 	if h.name == "" {
-		return "http://" + h.addr
+		return fmt.Sprintf("%s://%s", h.schema, h.addr)
 	}
 	return h.name
 }
 
 func (h *HTTP) Run() error {
+	l, err := net.Listen("tcp", h.addr)
+	if err != nil {
+		return err
+	}
+
+	// support HTTPS
 	if h.cert != "" {
 		cert, err := tls.LoadX509KeyPair(h.cert, h.cert)
 		if err != nil {
 			return err
 		}
 
-		l, err := tls.Listen("tcp", h.addr, &tls.Config{
+		l = tls.NewListener(l, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		})
-		if err != nil {
-			return err
-		}
-		h.l = l
-
-		log.Printf("Starting HTTPS relay %q on %v", h.Name(), h.addr)
-	} else {
-		l, err := net.Listen("tcp", h.addr)
-		if err != nil {
-			return err
-		}
-		h.l = l
-
-		log.Printf("Starting HTTP relay %q on %v", h.Name(), h.addr)
 	}
 
-	err := http.Serve(h.l, h)
+	h.l = l
+
+	log.Printf("Starting %s relay %q on %v", strings.ToUpper(h.schema), h.Name(), h.addr)
+
+	err = http.Serve(h.l, h)
 	if atomic.LoadInt64(&h.closing) != 0 {
 		return nil
 	}
