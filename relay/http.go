@@ -157,6 +157,9 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	outBytes := outBuf.Bytes()
 
+	// check for authorization performed via the header
+	authHeader := r.Header.Get("Authorization")
+
 	var wg sync.WaitGroup
 	wg.Add(len(h.backends))
 
@@ -166,7 +169,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b := b
 		go func() {
 			defer wg.Done()
-			resp, err := b.post(outBytes, query)
+			resp, err := b.post(outBytes, query, authHeader)
 			if err != nil {
 				log.Printf("Problem posting to relay %q backend %q: %v", h.Name(), b.name, err)
 			} else {
@@ -243,7 +246,7 @@ func jsonError(w http.ResponseWriter, code int, message string) {
 }
 
 type poster interface {
-	post([]byte, string) (*responseData, error)
+	post([]byte, string, string) (*responseData, error)
 }
 
 type simplePoster struct {
@@ -258,7 +261,7 @@ func newSimplePoster(location string, timeout time.Duration) *simplePoster {
 	}
 }
 
-func (b *simplePoster) post(buf []byte, query string) (*responseData, error) {
+func (b *simplePoster) post(buf []byte, query string, auth string) (*responseData, error) {
 	req, err := http.NewRequest("POST", b.location, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
@@ -267,6 +270,9 @@ func (b *simplePoster) post(buf []byte, query string) (*responseData, error) {
 	req.URL.RawQuery = query
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Content-Length", strconv.Itoa(len(buf)))
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := b.client.Do(req)
 	if err != nil {
