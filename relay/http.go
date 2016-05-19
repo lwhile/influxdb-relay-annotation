@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -251,9 +252,20 @@ type simplePoster struct {
 	location string
 }
 
-func newSimplePoster(location string, timeout time.Duration) *simplePoster {
+func newSimplePoster(location string, timeout time.Duration, skipTLSVerification bool) *simplePoster {
+	// Configure custom transport for http.Client
+	// Used for support skip-tls-verification option
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipTLSVerification,
+		},
+	}
+
 	return &simplePoster{
-		client:   &http.Client{Timeout: timeout},
+		client: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
 		location: location,
 	}
 }
@@ -309,7 +321,7 @@ func newHTTPBackend(cfg *HTTPOutputConfig) (*httpBackend, error) {
 		timeout = t
 	}
 
-	var p poster = newSimplePoster(cfg.Location, timeout)
+	var p poster = newSimplePoster(cfg.Location, timeout, cfg.SkipTLSVerification)
 
 	// If configured, create a retryBuffer per backend.
 	// This way we serialize retries against each backend.
