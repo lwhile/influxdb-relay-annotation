@@ -26,6 +26,7 @@ type HTTP struct {
 	schema string
 
 	cert string
+	rp   string
 
 	closing int64
 	l       net.Listener
@@ -49,6 +50,7 @@ func NewHTTP(cfg HTTPConfig) (Relay, error) {
 	h.name = cfg.Name
 
 	h.cert = cfg.SSLCombinedPem
+	h.rp = cfg.DefaultRetentionPolicy
 
 	h.schema = "http"
 	if h.cert != "" {
@@ -125,10 +127,16 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	queryParams := r.URL.Query()
+
 	// fail early if we're missing the database
-	if r.URL.Query().Get("db") == "" {
+	if queryParams.Get("db") == "" {
 		jsonError(w, http.StatusBadRequest, "missing parameter: db")
 		return
+	}
+
+	if queryParams.Get("rp") == "" && h.rp != "" {
+		queryParams.Set("rp", h.rp)
 	}
 
 	var body = r.Body
@@ -150,7 +158,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	precision := r.URL.Query().Get("precision")
+	precision := queryParams.Get("precision")
 	points, err := models.ParsePointsWithPrecision(bodyBuf.Bytes(), start, precision)
 	if err != nil {
 		putBuf(bodyBuf)
@@ -178,7 +186,7 @@ func (h *HTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// normalize query string
-	query := r.URL.Query().Encode()
+	query := queryParams.Encode()
 
 	outBytes := outBuf.Bytes()
 

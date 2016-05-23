@@ -16,9 +16,9 @@
 [[http]]
 name = "kapacitor-http"
 bind-addr = "0.0.0.0:9096"
+default-retention-policy = "default"
 output = [
     { name="influxdb1", location = "http://influxdb1:8086/write" },
     { name="influxdb2", location = "http://influxdb2:8086/write" },
     { name="kapacitor1", location = "http://kapacitor1:9092/write" },
 ]
-

@@ -21,6 +21,9 @@ type HTTPConfig struct {
 	// Set certificate in order to handle HTTPS requests
 	SSLCombinedPem string `toml:"ssl-combined-pem"`
 
+	// Default retention policy to set for forwarded requests
+	DefaultRetentionPolicy string `toml:"default-retention-policy"`
+
 	// Outputs is a list of backed servers where writes will be forwarded
 	Outputs []HTTPOutputConfig `toml:"output"`
 }
