@@ -416,20 +416,6 @@ def generate_md5_from_file(path):
             m.update(chunk)
     return m.hexdigest()
 
-def generate_sig_from_file(path):
-    """Generate a detached GPG signature from the file at path.
-    """
-    logging.debug("Generating GPG signature for file: {}".format(path))
-    gpg_path = check_path_for('gpg')
-    if gpg_path is None:
-        logging.warn("gpg binary not found on path! Skipping signature creation.")
-        return False
-    if os.environ.get("GNUPG_HOME") is not None:
-        run('gpg --homedir {} --armor --yes --detach-sign {}'.format(os.environ.get("GNUPG_HOME"), path))
-    else:
-        run('gpg --armor --detach-sign --yes {}'.format(path))
-    return True
-
 def package(build_output, version, nightly=False, iteration=1, static=False, release=False):
     """Package the output of the build process.
     """
