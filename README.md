@@ -162,3 +162,47 @@ While `influxdb-relay` does provide some level of high availability, there are a
 - Overwriting points is potentially unpredictable. For example, given servers A and B, if B is down, and point X is written (we'll call the value X1) just before B comes back online, that write is queued behind every other write that occurred while B was offline. Once B is back online, the first buffered write succeeds, and all new writes are now allowed to pass-through. At this point (before X1 is written to B), X is written again (with value X2 this time) to both A and B. When the relay reaches the end of B's buffered writes, it will write X (with value X1) to B... At this point A now has X2, but B has X1.
   - It is probably best to avoid re-writing points (if possible). Otherwise, please be aware that overwriting the same field for a given point can lead to data differences.
   - This could potentially be mitigated by waiting for the buffer to flush before opening writes back up to being passed-through.
+
+## Building
+
+The recommended method for building `influxdb-relay` is to use Docker
+and the included `Dockerfile_build_ubuntu64` Dockerfile, which
+includes all of the necessary dependencies.
+
+To build the docker image, you can run:
+
+```
+docker build -f Dockerfile_build_ubuntu64 -t influxdb-relay-builder:latest .
+```
+
+And then to build the project:
+
+```
+docker run --rm -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder
+```
+
+*NOTE* By default, builds will be for AMD64 Linux (since the container
+is running AMD64 Linux), but to change the target platform or
+architecture, use the `--platform` and `--arch` CLI options.
+
+Which should immediately call the included `build.py` build script,
+and leave any build output in the `./build` directory. To see a list
+of available build commands, append a `--help` to the command above.
+
+```
+docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --help
+```
+
+### Packages
+
+To build system packages for Linux (`deb`, `rpm`, etc), use the
+`--package` option:
+
+```
+docker run -v $(pwd):/root/go/src/github.com/influxdata/influxdb-relay influxdb-relay-builder --package
+```
+
+To build packages for other platforms or architectures, use the
+`--platform` and `--arch` options. For example, to build an amd64
+package for Mac OS X, use the options `--package --platform darwin`.
+
