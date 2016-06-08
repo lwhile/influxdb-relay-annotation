@@ -10,12 +10,12 @@ To build from source and run:
 
 ```sh
 $ # Install influxdb-relay to your $GOPATH/bin
-$ go install github.com/influxdata/influxdb-relay
+$ go get -u github.com/influxdata/influxdb-relay
 $ # Edit your configuration file
-$ cp $GOPATH/github.com/influxdata/influxdb-relay/sample.toml ./relay.toml
+$ cp $GOPATH/src/github.com/influxdata/influxdb-relay/sample.toml ./relay.toml
 $ vim relay.toml
 $ # Start relay!
-$ $GOPATH/influxdb-relay -config relay.toml
+$ $GOPATH/bin/influxdb-relay -config relay.toml
 ```
 
 ## Configuration
