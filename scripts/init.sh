@@ -174,7 +174,7 @@ function stop() {
                     # After 30 seconds, send SIGKILL
                     echo "Timeout exceeded, sending SIGKILL..."
                     kill -s SIGKILL $PID &>/dev/null
-                elif [ $? -eq 40 ]; then
+                elif [ $n -eq 40 ]; then
                     # After 40 seconds, error out
                     log_failure_msg "could not stop $NAME process"
                     exit 1
