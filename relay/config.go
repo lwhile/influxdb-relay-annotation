@@ -6,11 +6,15 @@ import (
 	"github.com/naoina/toml"
 )
 
+// Config abstract config file
 type Config struct {
+	// Reference to sample.toml could find two major config item: HTTP and UDP
+	// 参考sample.toml会发现配置项分为两大类: HTTP 和 UDP
 	HTTPRelays []HTTPConfig `toml:"http"`
 	UDPRelays  []UDPConfig  `toml:"udp"`
 }
 
+// HTTPConfig abstract http config
 type HTTPConfig struct {
 	// Name identifies the HTTP relay
 	Name string `toml:"name"`
@@ -22,6 +26,7 @@ type HTTPConfig struct {
 	SSLCombinedPem string `toml:"ssl-combined-pem"`
 
 	// Default retention policy to set for forwarded requests
+	// 请求转发到influxdb之前可以写入配置好的数据保存策略
 	DefaultRetentionPolicy string `toml:"default-retention-policy"`
 
 	// Outputs is a list of backed servers where writes will be forwarded
@@ -51,6 +56,7 @@ type HTTPOutputConfig struct {
 
 	// Skip TLS verification in order to use self signed certificate.
 	// WARNING: It's insecure. Use it only for developing and don't use in production.
+	// todo: ?
 	SkipTLSVerification bool `toml:"skip-tls-verification"`
 }
 
@@ -83,6 +89,7 @@ type UDPOutputConfig struct {
 }
 
 // LoadConfigFile parses the specified file into a Config object
+// 配置文件的载入放在config相关文件,可以避免在main.go加入了文件的读写逻辑
 func LoadConfigFile(filename string) (cfg Config, err error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -90,5 +97,6 @@ func LoadConfigFile(filename string) (cfg Config, err error) {
 	}
 	defer f.Close()
 
+	// good tasty.
 	return cfg, toml.NewDecoder(f).Decode(&cfg)
 }

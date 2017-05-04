@@ -33,6 +33,14 @@ type retryBuffer struct {
 	p poster
 }
 
+type bufferList struct {
+	cond     *sync.Cond
+	head     *batch
+	size     int
+	maxSize  int
+	maxBatch int
+}
+
 func newRetryBuffer(size, batch int, max time.Duration, p poster) *retryBuffer {
 	r := &retryBuffer{
 		initialInterval: retryInitial,
@@ -78,6 +86,7 @@ func (r *retryBuffer) run() {
 		}
 
 		interval := r.initialInterval
+		// 重试直到成功 ?
 		for {
 			resp, err := r.p.post(buf.Bytes(), batch.query, batch.auth)
 			if err == nil && resp.StatusCode/100 != 5 {
@@ -88,6 +97,8 @@ func (r *retryBuffer) run() {
 			}
 
 			if interval != r.maxInterval {
+				// 当influxdb api status code = 5xx时
+				// 会休眠一段时间,这个时间的大小由初始时间 * 放大因子multiper
 				interval *= r.multiplier
 				if interval > r.maxInterval {
 					interval = r.maxInterval
@@ -120,14 +131,6 @@ func newBatch(buf []byte, query string, auth string) *batch {
 	b.auth = auth
 	b.wg.Add(1)
 	return b
-}
-
-type bufferList struct {
-	cond     *sync.Cond
-	head     *batch
-	size     int
-	maxSize  int
-	maxBatch int
 }
 
 func newBufferList(maxSize, maxBatch int) *bufferList {
